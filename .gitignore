@@ -1,0 +1,32 @@
+# Data / PDFs Input Folder
+data/
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# API Keys and Secrets
+.env
+
+# Cache folders
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.pytest_cache/
+
+# Databases & Vector Stores
+db/
+*.db
+vector_store/
+test_vector_store/
+
+# Temporary Audio/TTS Files
+temp_record.wav
+temp_tts.mp3
+temp_upload.webm
+
+# Reports & Static plots (generated locally)
+reports/dashboard.html
+reports/*.png

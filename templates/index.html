@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Voice Exam Prep & Research Assistant</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar Navigation -->
+        <aside class="sidebar">
+            <div class="sidebar-brand">
+                <i class="fa-solid fa-microphone-lines brand-icon"></i>
+                <div>
+                    <h2>ExamPrep AI</h2>
+                    <span>Research Suite</span>
+                </div>
+            </div>
+            <nav class="sidebar-nav">
+                <a href="#" class="nav-item active" data-section="library">
+                    <i class="fa-solid fa-cubes"></i> Dashboard & Library
+                </a>
+                <a href="#" class="nav-item" data-section="quiz">
+                    <i class="fa-solid fa-graduation-cap"></i> Study Center (Quiz)
+                </a>
+                <a href="#" class="nav-item" data-section="research">
+                    <i class="fa-solid fa-compass-drafting"></i> Research & Notes
+                </a>
+            </nav>
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar"><i class="fa-solid fa-user-graduate"></i></div>
+                    <div>
+                        <h4>Study Lounge</h4>
+                        <span>Active Session</span>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            
+            <!-- SECTION 1: LIBRARY & DASHBOARD -->
+            <section id="section-library" class="content-section active">
+                <header class="section-header">
+                    <div>
+                        <h1>Overview & Study Library</h1>
+                        <p>Upload course notes, slides, and manage your vector database</p>
+                    </div>
+                </header>
+
+                <!-- Metric Cards -->
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-icon"><i class="fa-solid fa-chart-simple"></i></div>
+                        <div>
+                            <span class="metric-label">Total Quizzes</span>
+                            <h3 id="stat-attempts" class="metric-value">0</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon correct"><i class="fa-solid fa-percent"></i></div>
+                        <div>
+                            <span class="metric-label">Avg Accuracy</span>
+                            <h3 id="stat-accuracy" class="metric-value">0%</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon incorrect"><i class="fa-solid fa-triangle-exclamation"></i></div>
+                        <div>
+                            <span class="metric-label">Needs Focus</span>
+                            <h3 id="stat-weakest" class="metric-value font-sm">N/A</h3>
+                        </div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-icon mastered"><i class="fa-solid fa-award"></i></div>
+                        <div>
+                            <span class="metric-label">Mastered Topic</span>
+                            <h3 id="stat-strongest" class="metric-value font-sm">N/A</h3>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Library Grid: Upload & File management -->
+                <div class="library-grid">
+                    <!-- Upload Panel -->
+                    <div class="glass-card upload-panel">
+                        <h3><i class="fa-solid fa-cloud-arrow-up"></i> Add Study Material</h3>
+                        <p class="card-desc">Supported formats: PDF, DOCX (Word), PPTX (PowerPoint)</p>
+                        
+                        <div id="dropzone" class="dropzone">
+                            <i class="fa-solid fa-file-invoice-dollar upload-icon"></i>
+                            <p>Drag & Drop files here or click to browse</p>
+                            <input type="file" id="file-input" accept=".pdf,.docx,.pptx" hidden>
+                        </div>
+                        
+                        <div id="upload-status" class="status-msg hidden"></div>
+                    </div>
+
+                    <!-- Library List Panel -->
+                    <div class="glass-card library-panel">
+                        <h3><i class="fa-solid fa-folder-open"></i> Document Library</h3>
+                        <p class="card-desc">Active references in your vector knowledge base</p>
+                        
+                        <div class="file-list-container">
+                            <ul id="file-list" class="file-list">
+                                <li class="empty-list-msg">No files uploaded yet. Add files on the left!</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="dashboard-link-container">
+                            <a href="/reports/dashboard.html" target="_blank" class="btn btn-secondary btn-full">
+                                <i class="fa-solid fa-up-right-from-square"></i> Open Visual Analytics Dashboard
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 2: STUDY CENTER (QUIZ & VIVA) -->
+            <section id="section-quiz" class="content-section">
+                <header class="section-header">
+                    <div>
+                        <h1>Interactive Study Center</h1>
+                        <p>Practice with conceptual RAG-generated questions using voice or text</p>
+                    </div>
+                </header>
+
+                <div class="quiz-container">
+                    <!-- Topic Selector -->
+                    <div class="glass-card quiz-setup">
+                        <div class="setup-row">
+                            <div class="form-group">
+                                <label for="quiz-topic-select"><i class="fa-solid fa-book"></i> Focus Topic</label>
+                                <select id="quiz-topic-select" class="form-control">
+                                    <option value="">Smart Weighted (Focuses on weaker areas)</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label><i class="fa-solid fa-toggle-on"></i> Mode</label>
+                                <div class="toggle-container">
+                                    <button id="mode-text-btn" class="toggle-btn active">Text Quiz</button>
+                                    <button id="mode-viva-btn" class="toggle-btn">Spoken Viva Mode</button>
+                                </div>
+                            </div>
+                            <div class="form-group align-bottom">
+                                <button id="start-quiz-btn" class="btn btn-primary btn-full">
+                                    <i class="fa-solid fa-bolt"></i> Generate Question
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Active Question Card -->
+                    <div id="question-card" class="glass-card question-card hidden">
+                        <div class="question-header">
+                            <span class="tag tag-topic" id="quest-topic-tag">Topic Name</span>
+                            <span class="tag tag-page" id="quest-page-tag">Page X</span>
+                        </div>
+                        <h2 id="quest-text" class="question-text">Question goes here...</h2>
+                        <button id="audio-speak-btn" class="btn btn-icon" title="Listen to question">
+                            <i class="fa-solid fa-volume-high"></i> Listen
+                        </button>
+                    </div>
+
+                    <!-- User Answer Card -->
+                    <div id="answer-card" class="glass-card answer-card hidden">
+                        <h3>Your Answer</h3>
+                        
+                        <!-- Text Mode Input -->
+                        <div id="input-text-container" class="answer-input-group">
+                            <textarea id="answer-text-input" class="form-control text-answer-area" placeholder="Type your detailed answer here..."></textarea>
+                        </div>
+                        
+                        <!-- Viva Mode Input (Voice Recorder) -->
+                        <div id="input-viva-container" class="answer-input-group hidden">
+                            <div class="viva-panel">
+                                <div class="recorder-controls">
+                                    <button id="record-btn" class="record-btn">
+                                        <i class="fa-solid fa-microphone"></i>
+                                    </button>
+                                    <div id="record-ring" class="record-ring"></div>
+                                </div>
+                                <div class="recorder-status">
+                                    <p id="record-status-label">Click mic and press Enter (or click again) to start</p>
+                                    <p id="record-timer" class="timer-text">00:00</p>
+                                </div>
+                                <canvas id="waveform-canvas" class="waveform-canvas"></canvas>
+                            </div>
+                        </div>
+                        
+                        <!-- Action Row -->
+                        <div class="answer-action-row">
+                            <button id="submit-answer-btn" class="btn btn-primary">
+                                <i class="fa-solid fa-circle-check"></i> Submit Answer
+                            </button>
+                            <div id="quiz-processing" class="spinner-container hidden">
+                                <i class="fa-solid fa-circle-notch fa-spin"></i> Processing answer...
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Grade Feedback Panel -->
+                    <div id="feedback-card" class="glass-card feedback-card hidden">
+                        <div class="feedback-header">
+                            <span id="feedback-verdict-badge" class="verdict-badge">Correct</span>
+                            <h3>Grading Feedback</h3>
+                        </div>
+                        <p id="feedback-explanation" class="feedback-explanation">Explanation details...</p>
+                        
+                        <!-- citation wrapper -->
+                        <div class="citation-box">
+                            <h4><i class="fa-solid fa-feather-pointed"></i> Context Citation</h4>
+                            <p id="feedback-citation" class="feedback-citation">"Citation text quote..."</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- SECTION 3: RESEARCH & NOTES -->
+            <section id="section-research" class="content-section">
+                <header class="section-header">
+                    <div>
+                        <h1>RAG Research & Study Notes Suite</h1>
+                        <p>Ask free-form questions across all notes and edit active study summaries</p>
+                    </div>
+                </header>
+
+                <div class="research-grid">
+                    <!-- Left Column: Interactive Chat Assistant -->
+                    <div class="glass-card chat-panel">
+                        <h3><i class="fa-solid fa-compass"></i> Document Research Chat</h3>
+                        <p class="card-desc">Queries uploaded notes & slides for conceptual answers</p>
+                        
+                        <div id="chat-messages" class="chat-messages-container">
+                            <div class="chat-message assistant">
+                                Hello! Ask me any conceptual question about your notes or study guides, and I'll search the library to write an answer with direct citations.
+                            </div>
+                        </div>
+                        
+                        <div class="chat-input-bar">
+                            <input type="text" id="chat-text-input" class="chat-input-field" placeholder="Ask a conceptual question...">
+                            
+                            <!-- Spoken chat input capability -->
+                            <button id="chat-record-btn" class="chat-mic-btn" title="Ask via voice">
+                                <i class="fa-solid fa-microphone"></i>
+                            </button>
+                            
+                            <button id="chat-send-btn" class="btn btn-primary chat-send-btn">
+                                <i class="fa-solid fa-paper-plane"></i>
+                            </button>
+                        </div>
+                        <div id="chat-status" class="chat-status-msg hidden"></div>
+                    </div>
+
+                    <!-- Right Column: Note Editor -->
+                    <div class="glass-card editor-panel">
+                        <div class="editor-header">
+                            <h3><i class="fa-solid fa-pen-nib"></i> Study Notes Editor</h3>
+                            <div class="editor-list-dropdown">
+                                <select id="editor-note-select" class="form-control select-sm">
+                                    <option value="">-- Start a New Note --</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="form-group">
+                            <input type="text" id="note-title" class="form-control input-title" placeholder="Note Title (e.g. Introduction to Ethics)">
+                        </div>
+                        
+                        <div class="editor-row">
+                            <div class="form-group flex-1">
+                                <input type="text" id="note-topic" class="form-control input-sm" placeholder="Topic Tag (e.g. CSET208)">
+                            </div>
+                        </div>
+
+                        <div class="form-group flex-1 d-flex flex-column">
+                            <textarea id="note-content" class="form-control note-content-area" placeholder="Write your personal summaries, notes, or explanations here. These notes are automatically added to the RAG database so you can query them in the chat panel!"></textarea>
+                        </div>
+                        
+                        <div class="editor-action-row">
+                            <button id="save-note-btn" class="btn btn-primary">
+                                <i class="fa-solid fa-floppy-disk"></i> Save & Index Note
+                            </button>
+                            <button id="delete-note-btn" class="btn btn-danger hidden">
+                                <i class="fa-solid fa-trash-can"></i> Delete Note
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+</body>
+</html>
