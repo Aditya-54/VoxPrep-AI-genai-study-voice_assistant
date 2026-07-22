@@ -1,6 +1,7 @@
 import os
 import random
 import logging
+import numpy as np
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 import chromadb
@@ -171,23 +172,43 @@ class QuestionGenerator:
                 "message": f"No content found for topic '{topic_or_chapter}' in the database."
             }
 
+        # 1b. Smarter chunk ordering: prefer pages with lower historical accuracy
+        # (or never-tested pages) over recently-tested/mastered pages within this topic.
+        chunk_order = self._weighted_chunk_order(metadatas)
+
+        # 1c. Recent-question avoidance: fetch recently asked questions for this topic so the
+        # generation prompt can steer away from duplicates, and pre-embed them for a
+        # similarity guard on the freshly generated question (no extra Groq calls either way).
+        import db as _db
+        try:
+            recent_questions = _db.get_recent_questions(topic_or_chapter, limit=5)
+        except Exception as e:
+            logger.warning(f"Could not load recent questions for de-duplication: {e}")
+            recent_questions = []
+        recent_embeddings = self.embedding_model.encode(recent_questions) if recent_questions else []
+
         # 2. Iterate/retry to generate a question that passes the self-check
         max_attempts = 3
         for attempt in range(max_attempts):
-            # Select a chunk to base the question on (rotate or randomly select)
-            chunk_idx = attempt % len(documents)
+            # Select a chunk to base the question on, in weighted (weakest-first) order
+            chunk_idx = chunk_order[attempt % len(chunk_order)]
             selected_chunk = documents[chunk_idx]
             selected_meta = metadatas[chunk_idx]
-            
+
             logger.info(f"Generating question from chunk {chunk_idx + 1}/{len(documents)} (Attempt {attempt + 1}/{max_attempts})...")
-            
-            question = self._call_llm_for_question(selected_chunk, topic_or_chapter)
+
+            question = self._call_llm_for_question(selected_chunk, topic_or_chapter, avoid_questions=recent_questions)
             if not question:
                 continue
-                
-            # 3. Self-Check
+
+            # 3. Duplicate guard: reject near-identical rephrasing of a recently asked question
+            if self._is_near_duplicate(question, recent_embeddings):
+                logger.warning("Generated question is a near-duplicate of a recently asked question. Retrying with another chunk...")
+                continue
+
+            # 4. Self-Check
             passed, explanation = self._self_check_question(question, selected_chunk)
-            
+
             if passed:
                 logger.info("Question passed the self-check validation!")
                 return {
@@ -217,8 +238,63 @@ class QuestionGenerator:
             "message": "Failed to generate a valid question after multiple attempts."
         }
 
-    def _call_llm_for_question(self, context: str, topic: str) -> str:
+    def _weighted_chunk_order(self, metadatas: list[dict]) -> list[int]:
+        """
+        Produces a priority order over candidate chunk indices, weighted so that pages
+        with lower historical accuracy (or never tested) are tried before pages the
+        student has already mastered. Pure retrieval/selection logic - no LLM calls.
+        """
+        import db as _db
+        try:
+            page_stats = {(s["source_file"], s["page_number"]): s["accuracy"] for s in _db.get_page_stats()}
+        except Exception as e:
+            logger.warning(f"Could not load page stats for weighted chunk selection: {e}")
+            page_stats = {}
+
+        indices = list(range(len(metadatas)))
+        weights = []
+        for meta in metadatas:
+            key = (meta.get("source_file"), meta.get("page_number"))
+            acc = page_stats.get(key, 0.0)
+            weights.append(max(0.1, 1.0 - (acc / 100.0)))
+
+        # Weighted shuffle without replacement: repeatedly draw from the remaining pool.
+        order = []
+        remaining_idx = indices[:]
+        remaining_w = weights[:]
+        while remaining_idx:
+            choice = random.choices(remaining_idx, weights=remaining_w, k=1)[0]
+            pos = remaining_idx.index(choice)
+            order.append(remaining_idx.pop(pos))
+            remaining_w.pop(pos)
+        return order
+
+    def _is_near_duplicate(self, question: str, recent_embeddings, threshold: float = 0.92) -> bool:
+        """
+        Checks the freshly generated question against recently asked questions using
+        embedding cosine similarity, to avoid re-asking near-identical rephrasings.
+        Uses the embedding model already loaded for retrieval - adds no Groq calls.
+        """
+        if recent_embeddings is None or len(recent_embeddings) == 0:
+            return False
+
+        q_emb = self.embedding_model.encode([question])[0]
+        for emb in recent_embeddings:
+            sim = float(np.dot(q_emb, emb) / ((np.linalg.norm(q_emb) * np.linalg.norm(emb)) + 1e-8))
+            if sim >= threshold:
+                return True
+        return False
+
+    def _call_llm_for_question(self, context: str, topic: str, avoid_questions: list[str] = None) -> str:
         """Helper to invoke Groq to generate a single question."""
+        avoid_block = ""
+        if avoid_questions:
+            formatted = "\n".join(f'- "{q}"' for q in avoid_questions)
+            avoid_block = f"""
+
+Recently Asked Questions (avoid repeating or closely rephrasing ANY of these):
+{formatted}"""
+
         prompt = f"""You are an expert exam designer.
 Your task is to generate ONE single, clear, and challenging study or exam question based strictly on the text provided below.
 
@@ -229,13 +305,14 @@ Guidelines:
 4. Do NOT use any external or general knowledge not contained in the text.
 5. Keep the question professional, concept-driven, and educational.
 6. Output ONLY the question text. Do not add any conversational filler, intro, or markdown formatting (like "Question:").
+7. The question must be meaningfully different from any question listed below under "Recently Asked Questions" - do not just reword them.
 
 Context Text:
 \"\"\"
 {context}
 \"\"\"
 
-Topic context: {topic}
+Topic context: {topic}{avoid_block}
 
 Generate the question:"""
 

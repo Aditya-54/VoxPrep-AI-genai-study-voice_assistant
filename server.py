@@ -2,8 +2,7 @@ import os
 import shutil
 import logging
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
@@ -16,7 +15,8 @@ import db
 import doc_parser
 import question_gen
 import grader
-import dashboard
+from routers import chat as chat_router
+from routers import quiz as quiz_router
 
 # Load environment variables from absolute path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -27,20 +27,17 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Voice-Based Exam Prep & Research Assistant API")
+app.include_router(chat_router.router)
+app.include_router(quiz_router.router)
 
 # Setup directories
 DATA_DIR = "data"
 VECTOR_DB_DIR = "vector_store"
 COLLECTION_NAME = "course_notes"
 EMBEDDING_MODEL_NAME = "all-MiniLM-L6-v2"
-TEMPLATES_DIR = "templates"
-STATIC_DIR = "static"
 
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(VECTOR_DB_DIR, exist_ok=True)
-os.makedirs(TEMPLATES_DIR, exist_ok=True)
-os.makedirs(os.path.join(STATIC_DIR, "css"), exist_ok=True)
-os.makedirs(os.path.join(STATIC_DIR, "js"), exist_ok=True)
 
 # Global models (loaded lazily)
 _embedding_model = None
@@ -147,6 +144,7 @@ def index_note_in_chroma(note_id: int, title: str, content: str, topic: str):
 class GradeRequest(BaseModel):
     question_dict: dict
     user_answer: str
+    session_id: int = None
 
 
 class NoteRequest(BaseModel):
@@ -158,6 +156,7 @@ class NoteRequest(BaseModel):
 
 class QueryRequest(BaseModel):
     query: str
+    session_id: int = None
 
 
 class VagueRequest(BaseModel):
@@ -253,10 +252,9 @@ def grade_quiz(payload: GradeRequest):
                 verdict=res.get("verdict"),
                 explanation=res.get("explanation"),
                 source_file=payload.question_dict.get("source_metadata", {}).get("source_file", "General"),
-                page_number=payload.question_dict.get("source_metadata", {}).get("page_number", 0)
+                page_number=payload.question_dict.get("source_metadata", {}).get("page_number", 0),
+                session_id=payload.session_id
             )
-            # Regenerate dashboard HTML report
-            dashboard.generate_dashboard()
         except Exception as e:
             logger.error(f"Error logging attempt: {e}")
             
@@ -354,10 +352,27 @@ def research_query(payload: QueryRequest):
     """
     q_generator = question_gen.QuestionGenerator()
     coll = q_generator.collection
-    
+
+    # Persist the user's message immediately if this query belongs to a chat session
+    if payload.session_id is not None:
+        try:
+            db.add_chat_message(payload.session_id, "user", payload.query)
+            session = db.get_chat_session(payload.session_id)
+            if session and session.get("title") == "New Chat":
+                auto_title = payload.query.strip()[:40] + ("..." if len(payload.query.strip()) > 40 else "")
+                db.rename_chat_session(payload.session_id, auto_title)
+        except Exception as e:
+            logger.error(f"Failed to persist user chat message: {e}")
+
     if not coll or coll.count() == 0:
-        return {"answer": "No study materials or notes have been uploaded to search.", "citations": []}
-        
+        answer = "No study materials or notes have been uploaded to search."
+        if payload.session_id is not None:
+            try:
+                db.add_chat_message(payload.session_id, "assistant", answer)
+            except Exception as e:
+                logger.error(f"Failed to persist assistant chat message: {e}")
+        return {"answer": answer, "citations": []}
+
     # Embed search query
     model = get_embedding_model()
     query_emb = model.encode([payload.query]).tolist()
@@ -368,8 +383,14 @@ def research_query(payload: QueryRequest):
     metadatas = results.get("metadatas", [[]])[0]
     
     if not documents:
-        return {"answer": "I couldn't find any relevant details in your files or notes to answer that question.", "citations": []}
-        
+        answer = "I couldn't find any relevant details in your files or notes to answer that question."
+        if payload.session_id is not None:
+            try:
+                db.add_chat_message(payload.session_id, "assistant", answer)
+            except Exception as e:
+                logger.error(f"Failed to persist assistant chat message: {e}")
+        return {"answer": answer, "citations": []}
+
     # Build prompt context
     context_blocks = []
     citations = []
@@ -408,10 +429,21 @@ Academic Answer:"""
             temperature=0.3
         )
         answer = response.choices[0].message.content.strip()
+        if payload.session_id is not None:
+            try:
+                db.add_chat_message(payload.session_id, "assistant", answer, citations=citations)
+            except Exception as e:
+                logger.error(f"Failed to persist assistant chat message: {e}")
         return {"answer": answer, "citations": citations}
     except Exception as e:
         logger.error(f"Research query generation error: {e}")
-        return {"answer": f"Error running research query: {str(e)}", "citations": []}
+        error_answer = f"Error running research query: {str(e)}"
+        if payload.session_id is not None:
+            try:
+                db.add_chat_message(payload.session_id, "assistant", error_answer)
+            except Exception as db_e:
+                logger.error(f"Failed to persist assistant error chat message: {db_e}")
+        return {"answer": error_answer, "citations": []}
 
 
 # 6. STATS & ANALYTICS
@@ -444,33 +476,10 @@ def get_stats():
     }
 
 
-# ==========================================
-# STATIC FILES SERVING & PAGE ROUTES
-# ==========================================
-
-# Serve generated static dashboard report
-@app.get("/reports/dashboard.html")
-def get_static_dashboard():
-    dashboard_path = os.path.join("reports", "dashboard.html")
-    if os.path.exists(dashboard_path):
-        return FileResponse(dashboard_path)
-    # Generate on-demand if missing
-    path = dashboard.generate_dashboard()
-    return FileResponse(path)
-
-
-# Mount static assets
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-
-
-# Serve SPA Main View
-@app.get("/", response_class=HTMLResponse)
-def get_index():
-    index_path = os.path.join(TEMPLATES_DIR, "index.html")
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            return f.read()
-    return "<h3>Error: templates/index.html is missing. Please create it.</h3>"
+@app.get("/api/stats/timeline")
+def get_stats_timeline():
+    """Exposes chronological accuracy history for trend charts (analytics page)."""
+    return db.get_accuracy_over_time()
 
 
 if __name__ == "__main__":
